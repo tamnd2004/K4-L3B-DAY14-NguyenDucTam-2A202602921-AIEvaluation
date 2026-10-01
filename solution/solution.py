@@ -25,6 +25,7 @@ The reranking helper is an optional bonus exercise and may remain unimplemented.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -164,8 +165,13 @@ class RAGASEvaluator:
         Returns:
             float in [0.0, 1.0] — 1.0 = fully grounded in context.
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_faithfulness")
+        answer_tokens = _tokenize(answer)
+        if not answer_tokens:
+            return 1.0
+        context_tokens = _tokenize(context)
+        score = len(answer_tokens & context_tokens) / len(answer_tokens)
+        return max(0.0, min(1.0, score))
+
 
     def evaluate_relevance(self, answer: str, question: str) -> float:
         """
@@ -178,8 +184,13 @@ class RAGASEvaluator:
         Returns:
             float in [0.0, 1.0]
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_relevance")
+        question_tokens = _tokenize(question)
+        if not question_tokens:
+            return 1.0
+        answer_tokens = _tokenize(answer)
+        score = len(answer_tokens & question_tokens) / len(question_tokens)
+        return max(0.0, min(1.0, score))
+
 
     def evaluate_completeness(self, answer: str, expected: str) -> float:
         """
@@ -192,8 +203,13 @@ class RAGASEvaluator:
         Returns:
             float in [0.0, 1.0]
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_completeness")
+        expected_tokens = _tokenize(expected)
+        if not expected_tokens:
+            return 1.0
+        answer_tokens = _tokenize(answer)
+        score = len(answer_tokens & expected_tokens) / len(expected_tokens)
+        return max(0.0, min(1.0, score))
+
 
     # -----------------------------------------------------------------------
     # Task 2b — Retrieval-side metrics (evaluate the GET-CONTEXT step)
@@ -214,8 +230,15 @@ class RAGASEvaluator:
 
         Low recall => retriever missed evidence the answer needs.
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_context_recall")
+        expected_tokens = _tokenize(expected)
+        if not expected_tokens:
+            return 1.0
+        union_tokens: set[str] = set()
+        for chunk in contexts:
+            union_tokens |= _tokenize(chunk)
+        score = len(expected_tokens & union_tokens) / len(expected_tokens)
+        return max(0.0, min(1.0, score))
+
 
     def evaluate_context_precision(
         self,
@@ -235,8 +258,24 @@ class RAGASEvaluator:
         Return 1.0 if expected empty; 0.0 if no chunks or none relevant.
         Reordering relevant chunks earlier (reranking) raises this score.
         """
-        # TODO
-        raise NotImplementedError("Implement evaluate_context_precision")
+        expected_tokens = _tokenize(expected)
+        if not expected_tokens:
+            return 1.0
+        if not contexts:
+            return 0.0
+
+        relevant_count = 0
+        precision_sum = 0.0
+        for k, chunk in enumerate(contexts, start=1):
+            coverage = len(_tokenize(chunk) & expected_tokens) / len(expected_tokens)
+            if coverage >= relevance_threshold:
+                relevant_count += 1
+                precision_sum += relevant_count / k  # Precision@k at a relevant rank
+
+        if relevant_count == 0:
+            return 0.0
+        return max(0.0, min(1.0, precision_sum / relevant_count))
+
 
     def run_full_eval(
         self,
@@ -268,8 +307,47 @@ class RAGASEvaluator:
         Returns:
             EvalResult with all fields populated.
         """
-        # TODO
-        raise NotImplementedError("Implement run_full_eval")
+        faithfulness = self.evaluate_faithfulness(answer, context)
+        relevance = self.evaluate_relevance(answer, question)
+        completeness = self.evaluate_completeness(answer, expected)
+
+        passed = faithfulness >= 0.5 and relevance >= 0.5 and completeness >= 0.5
+
+        failure_type: str | None = None
+        if not passed:
+            if faithfulness < 0.3:
+                failure_type = "hallucination"
+            elif relevance < 0.3:
+                failure_type = "irrelevant"
+            elif completeness < 0.3:
+                failure_type = "incomplete"
+            else:
+                failure_type = "off_topic"
+
+        # None = not computed; an empty list still runs the metrics (-> real 0.0).
+        context_recall: float | None = None
+        context_precision: float | None = None
+        if contexts is not None:
+            context_recall = self.evaluate_context_recall(contexts, expected)
+            context_precision = self.evaluate_context_precision(contexts, expected)
+
+        return EvalResult(
+            qa_pair=QAPair(
+                question=question,
+                expected_answer=expected,
+                context=context,
+                retrieved_contexts=list(contexts) if contexts is not None else [],
+            ),
+            actual_answer=answer,
+            faithfulness=faithfulness,
+            relevance=relevance,
+            completeness=completeness,
+            passed=passed,
+            failure_type=failure_type,
+            context_precision=context_precision,
+            context_recall=context_recall,
+        )
+
 
 
 # ---------------------------------------------------------------------------
@@ -312,8 +390,7 @@ class LLMJudge:
     """
 
     def __init__(self, judge_llm_fn: Callable[[str], str]) -> None:
-        # TODO: store judge_llm_fn
-        pass
+        self.judge_llm_fn = judge_llm_fn
 
     def score_response(
         self,
@@ -345,8 +422,40 @@ class LLMJudge:
                 "reasoning": str,               # raw LLM explanation
             }
         """
-        # TODO
-        raise NotImplementedError("Implement score_response")
+        criteria = "\n".join(f"- {name}: {desc}" for name, desc in rubric.items())
+        example = json.dumps({name: 0.0 for name in rubric})
+        prompt = (
+            "You are an impartial evaluator. Score the answer on each rubric "
+            "criterion with a number from 0.0 (worst) to 1.0 (best).\n\n"
+            f"Question:\n{question}\n\n"
+            f"Answer:\n{answer}\n\n"
+            f"Rubric:\n{criteria}\n\n"
+            "Return ONLY a JSON object mapping each criterion to its score, "
+            f"for example: {example}"
+        )
+
+        raw = self.judge_llm_fn(prompt)
+
+        parsed: dict[str, Any] = {}
+        match = re.search(r"\{.*\}", raw or "", re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                if isinstance(data, dict):
+                    parsed = data
+            except json.JSONDecodeError:
+                pass
+
+        scores: dict[str, float] = {}
+        for name in rubric:
+            value = parsed.get(name)
+            if isinstance(value, (int, float)):
+                scores[name] = max(0.0, min(1.0, float(value)))
+            else:
+                scores[name] = 0.5  # fallback when the judge output is unparseable
+
+        return {"scores": scores, "reasoning": raw}
+
 
     def detect_bias(self, scores_batch: list[dict[str, Any]]) -> dict[str, Any]:
         """
@@ -367,8 +476,31 @@ class LLMJudge:
                 "severity_bias":   bool,
             }
         """
-        # TODO
-        raise NotImplementedError("Implement detect_bias")
+        # Mean score of each response, in batch order (skip responses with no scores).
+        per_response = [
+            sum(item["scores"].values()) / len(item["scores"])
+            for item in scores_batch
+            if item.get("scores")
+        ]
+        if not per_response:
+            return {"positional_bias": False, "leniency_bias": False, "severity_bias": False}
+
+        all_scores = [
+            score
+            for item in scores_batch
+            for score in item.get("scores", {}).values()
+        ]
+        avg_score = sum(all_scores) / len(all_scores)
+
+        # Heuristic: the first response beats every later one in the batch.
+        positional_bias = len(per_response) >= 2 and per_response[0] > max(per_response[1:])
+
+        return {
+            "positional_bias": positional_bias,
+            "leniency_bias": avg_score > 0.8,
+            "severity_bias": avg_score < 0.3,
+        }
+
 
 
 # ---------------------------------------------------------------------------
