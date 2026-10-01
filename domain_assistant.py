@@ -35,6 +35,7 @@ STOPWORD_TEXT = (
 )
 STOPWORDS = frozenset(STOPWORD_TEXT.split())
 SOURCE_REPEAT_DECAY = 0.9
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 ProgressCallback = Callable[[str], None]
 
 
@@ -266,6 +267,37 @@ class OpenAIGenerator:
         return answer
 
 
+class GeminiGenerator:
+    """Gemini via its OpenAI-compatible endpoint (Chat Completions only;
+    the Responses API used by OpenAIGenerator returns 404 there)."""
+
+    def __init__(self, max_output_tokens: int = 300) -> None:
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        self.model = os.getenv("GEMINI_MODEL", "").strip()
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY is missing from .env")
+        if not self.model:
+            raise RuntimeError("GEMINI_MODEL is missing from .env")
+        self.client = OpenAI(api_key=api_key, base_url=GEMINI_BASE_URL)
+        self.max_output_tokens = max_output_tokens
+
+    def generate(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=self.max_output_tokens,
+        )
+        choice = response.choices[0]
+        # content is None when Gemini blocks or truncates the reply.
+        answer = (choice.message.content or "").strip()
+        if not answer:
+            raise RuntimeError(
+                f"Gemini returned an empty answer (finish_reason={choice.finish_reason})"
+            )
+        return answer
+
+
 @dataclass(frozen=True)
 class DomainResponse:
     question: str
@@ -299,7 +331,7 @@ class DomainAssistant:
         return cls(
             corpus_id,
             BM25Retriever(chunks),
-            generator if generator is not None else OpenAIGenerator(),
+            generator if generator is not None else GeminiGenerator(),
             top_k,
         )
 
