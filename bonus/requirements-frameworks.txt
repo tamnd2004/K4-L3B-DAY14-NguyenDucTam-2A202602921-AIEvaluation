@@ -1,0 +1,12 @@
+# Separate venv for Exercise 3.4 only — do not install into the lab .venv.
+# ragas 0.4.3 still imports langchain_community.chat_models.vertexai, which the
+# newest langchain-community removed, so the langchain stack is pinned to 0.3.x.
+ragas==0.4.3
+deepeval==4.2.7
+openai==1.109.1
+httpx==0.28.1
+python-dotenv==1.2.3
+langchain==0.3.30
+langchain-core==0.3.86
+langchain-community==0.3.31
+langchain-openai==0.3.35

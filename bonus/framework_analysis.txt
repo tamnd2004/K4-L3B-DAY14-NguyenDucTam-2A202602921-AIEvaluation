@@ -1,0 +1,41 @@
+judge=gemini-3.5-flash-lite generator=gemini-3.5-flash-lite n=20
+ragas: 998.5s, successful calls per run [{'ok_calls': 98, 'items_scored': 23}], errors={} []
+deepeval: 476.8s, successful calls per run [{'ok_calls': 71, 'items_scored': 39}], errors={} []
+
+== averages over cases scored by BOTH frameworks | Spearman
+faithfulness       n=20 RAGAS=0.784 DeepEval=0.950 lab=0.686 | rho(R,D)=-0.18 rho(R,lab)=+0.68 rho(D,lab)=-0.34 | mean|R-D|=0.266
+answer_relevancy   n=20 RAGAS=0.739 DeepEval=0.942 lab=0.374 | rho(R,D)=+0.48 rho(R,lab)=+0.71 rho(D,lab)=+0.37 | mean|R-D|=0.203
+context_recall     n=20 RAGAS=0.908 DeepEval=0.923 lab=0.827 | rho(R,D)=+0.65 rho(R,lab)=+0.49 rho(D,lab)=+0.53 | mean|R-D|=0.035
+context_precision  n=20 RAGAS=0.847 DeepEval=0.893 lab=0.925 | rho(R,D)=+0.52 rho(R,lab)=+0.15 rho(D,lab)=+0.20 | mean|R-D|=0.084
+
+== per case (R / D / lab)
+E01 faithf 1.00/1.00/0.95 | answer 0.74/1.00/0.42 | contex 1.00/1.00/0.95 | contex 1.00/1.00/1.00
+E02 faithf 1.00/1.00/0.27 | answer 0.96/1.00/0.55 | contex 1.00/1.00/1.00 | contex 1.00/1.00/1.00
+E03 faithf 1.00/1.00/1.00 | answer 0.93/1.00/0.50 | contex 1.00/1.00/1.00 | contex 1.00/1.00/1.00
+E04 faithf 1.00/1.00/0.93 | answer 0.98/1.00/0.44 | contex 1.00/1.00/1.00 | contex 1.00/1.00/0.95
+E05 faithf 1.00/1.00/0.75 | answer 0.90/1.00/0.60 | contex 1.00/1.00/0.94 | contex 1.00/1.00/0.95
+M01 faithf 1.00/1.00/1.00 | answer 0.67/0.83/0.29 | contex 1.00/1.00/0.95 | contex 1.00/0.75/1.00
+M02 faithf 0.80/1.00/0.61 | answer 0.69/1.00/0.50 | contex 1.00/1.00/0.74 | contex 1.00/1.00/0.83
+M03 faithf 1.00/1.00/0.89 | answer 0.86/1.00/0.67 | contex 1.00/1.00/0.98 | contex 1.00/1.00/1.00
+M04 faithf 1.00/1.00/0.83 | answer 0.86/1.00/0.21 | contex 1.00/1.00/1.00 | contex 1.00/1.00/1.00
+M05 faithf 0.60/1.00/0.54 | answer 0.73/1.00/0.35 | contex 0.67/0.67/0.76 | contex 1.00/1.00/0.83
+M06 faithf 1.00/0.00/1.00 | answer 0.68/1.00/0.06 | contex 0.50/1.00/0.75 | contex 1.00/1.00/0.70
+M07 faithf 1.00/1.00/0.80 | answer 0.75/1.00/0.28 | contex 1.00/1.00/0.89 | contex 1.00/0.87/0.89
+H01 faithf 0.50/1.00/0.59 | answer 0.88/1.00/0.56 | contex 1.00/1.00/0.79 | contex 0.50/0.58/1.00
+H02 faithf 0.29/1.00/0.54 | answer 0.86/1.00/0.54 | contex 1.00/1.00/0.83 | contex 0.92/0.92/1.00
+H03 faithf 1.00/1.00/0.57 | answer 0.90/1.00/0.50 | contex 1.00/1.00/0.85 | contex 0.50/0.92/0.89
+H04 faithf 0.75/1.00/0.59 | answer 0.81/1.00/0.50 | contex 1.00/1.00/0.82 | contex 0.83/1.00/1.00
+H05 faithf 0.75/1.00/0.85 | answer 0.78/1.00/0.40 | contex 1.00/1.00/0.87 | contex 0.50/1.00/1.00
+A01 faithf 0.00/1.00/0.00 | answer 0.00/0.00/0.00 | contex 0.00/0.00/0.30 | contex 0.00/0.00/0.70
+A02 faithf 0.00/1.00/0.17 | answer 0.00/1.00/0.00 | contex 1.00/0.80/0.71 | contex 0.83/0.83/0.81
+A03 faithf 1.00/1.00/0.83 | answer 0.78/1.00/0.12 | contex 1.00/1.00/0.41 | contex 0.87/1.00/0.95
+
+== cases with an answer-side score < 0.5 (faithfulness or answer_relevancy)
+RAGAS   : ['A01', 'A02', 'H02']
+DeepEval: ['A01', 'M06']
+lab core fails (passed=False): ['A01', 'A02', 'A03', 'E01', 'E02', 'E04', 'H05', 'M01', 'M04', 'M05', 'M06', 'M07']
+RAGAS∩DeepEval: ['A01'] | only RAGAS: ['A02', 'H02'] | only DeepEval: ['M06']
+
+== bottom 3 by mean(faithfulness, answer_relevancy)
+RAGAS [('A01', 0.0), ('A02', 0.0), ('H02', 0.572)]
+DeepEval [('A01', 0.5), ('M06', 0.5), ('M01', 0.917)]
